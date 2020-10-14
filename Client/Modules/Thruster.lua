@@ -27,6 +27,7 @@ local function GetDarkColorShade(color)
 	return darkColor
 end
 
+-- Thrusts an array of thrusters 
 function Thruster.ThrustAll(thrustGroup, speed)
 	coroutine.wrap(function()
 		for _, thruster in pairs(thrustGroup) do
@@ -44,7 +45,6 @@ function Thruster.CreateThrusterGroup(model, speed)
 			local rootPart = item:FindFirstChild("ThrustRootPart")
 			if rootPart then
 				local newThruster = Thruster.new(rootPart, rootPart.Radius.Value, rootPart.MaxHeight.Value, speed, rootPart.ThrustColor.Value)
-				-- newThruster:Activate()
 				group[#group+1] = newThruster
 			else
 				error("Failed to create thruster group. No thrust root part found.")
@@ -97,15 +97,14 @@ end
 
 -- Sets the parts color, position, and transparency. This is affected by the index of the part in self.Parts
 function Thruster:InitPart(index, part)
-	-- local weld = part:FindFirstChildWhichIsA("WeldConstraint")
-	-- weld:Destroy()
-	-- weld = Instance.new("WeldConstraint", part)
-	-- weld.Part0 = self.RootPart
-	-- weld.Part1 = part
-
+	local weld = part:FindFirstChildWhichIsA("Weld")
+	weld:Destroy()
+	weld = Instance.new("Weld", part)
+	weld.Part0 = self.RootPart
+	weld.Part1 = part
+	weld.C0 = weld.Part0.CFrame:Inverse() * (self.RootPart.CFrame * CFrame.new(0, 0, 0.15)) * CFrame.Angles(math.rad(90), 0, 0)
 
 	part.Color = self.Color
-	-- part.CFrame = self.RootPart.CFrame * CFrame.new(0, 0, 0.15) * CFrame.Angles(math.rad(90), 0, 0)
 	part.Position = self.RootPart.Position
 	part.Transparency = 1
 	
@@ -149,14 +148,13 @@ function Thruster:FadeOut(time)
 	end)()
 end
 
+-- Updates part depending on speed 
 function Thruster:UpdatePart(part, index)
 	-- How fast the ship is moving relative to its maximum speed
 	local speedRatio = self.CurrentSpeed / self.MaxSpeed
 	-- Each part's height will be PART_OFFSET smaller than the next and less than self.MaxHeight
 	local height = (speedRatio * self.MaxHeight) - (PART_OFFSET * (#self.Parts - index))
 	part.Size = Vector3.new(part.Size.X, height, part.Size.Z)
-	-- part.CFrame = 
-	--part.Position = Vector3.new(0, 0, height / 2)
 
 	-- Makes the inner-most cone glow and increase radius as speed increases
 	if index == 1 then
@@ -172,25 +170,21 @@ function Thruster:UpdatePart(part, index)
 	-- As the thrust effect increases in height, it will need to move back a bit
 	local zOffset = part.Size.Y / 2
 	zOffset = zOffset < 0.15 and 0.15 or zOffset
-
-	part.Position = self.RootPart.Position + Vector3.new(0, 0, zOffset)
-
-	-- part.CFrame = self.RootPart.CFrame * CFrame.new(0, 0, zOffset) * CFrame.Angles(math.rad(90), 0, 0)
 	
-	-- local weld = part:FindFirstChildWhichIsA("WeldConstraint") 
-	-- if weld then
-	-- 	weld.Enabled = false
-	-- 	part.Position = self.RootPart.Position + Vector3.new(0, 0, zOffset)
-	-- 	weld.Enabled = true
-	-- end
+	local weld = part:FindFirstChildWhichIsA("Weld") 
+
+	-- Offset weld 
+	weld.C0 = weld.Part0.CFrame:Inverse() * (self.RootPart.CFrame * CFrame.new(0, 0, zOffset)) * CFrame.Angles(math.rad(90), 0, 0)
 end
 
 function Thruster:Thrust(speed)
-	self.CurrentSpeed = speed
+	if speed ~= self.CurrentSpeed then
+		self.CurrentSpeed = speed
 
-	--Update each cone part
-	for i, part in pairs(self.Parts) do
-		self:UpdatePart(part, i)
+		--Update each cone part
+		for i, part in pairs(self.Parts) do
+			self:UpdatePart(part, i)
+		end
 	end
 end
 
