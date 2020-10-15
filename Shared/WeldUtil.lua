@@ -13,7 +13,6 @@ function WeldUtil.WeldModel(model)
         -- If it is indeed a part and not the primaryPart
         if (part:IsA("BasePart") and part ~= primaryPart) then
             -- Weld the part to the model's primary part
-            -- local Weld = Instance.new("WeldConstraint")
             local Weld = Instance.new("Weld")
             Weld.Name = "MainWeld"
             Weld.Part0 = primaryPart

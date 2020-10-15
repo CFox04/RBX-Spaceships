@@ -8,7 +8,8 @@ local KEYBINDS = {
     ACCELERATE = Enum.KeyCode.W,
     DECELERATE = Enum.KeyCode.S,
     ROLL_LEFT = Enum.KeyCode.A,
-    ROLL_RIGHT = Enum.KeyCode.D
+    ROLL_RIGHT = Enum.KeyCode.D,
+    FREE_LOOK = Enum.KeyCode.LeftAlt
 }
 
 local CAMERA_OFFSET = CFrame.new(0, 13, 25) * CFrame.fromEulerAnglesXYZ(math.rad(-10), 0, 0)
@@ -23,14 +24,19 @@ local PrimaryPart
 local BodyVelocity
 local BodyGyro
 local ShipStats
+local Camera = workspace.CurrentCamera
 
 local CurrentSpeed = 0 
 local IsFlying = false
+local mouseActive = false
 local RotX = 0
 local RotY = 0
 local ThrusterGroup = {}
 local SteppedEvent
 local SeatEvent
+
+local xAngle = 0
+local yAngle = 0
 
 function FlightController:Start()
     -- Gain controls of the spaceship the client has entered
@@ -96,7 +102,7 @@ function FlightController:StartFlight()
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 
         -- Fly function will be called on every frame
-        SteppedEvent = RunService.Stepped:Connect(function(first, dt)
+        SteppedEvent = RunService.Stepped:Connect(function(_, dt)
             self:Fly(dt)
             Thruster.ThrustAll(ThrusterGroup, CurrentSpeed / 30)
         end)
@@ -118,7 +124,9 @@ end
 function FlightController:Fly(dt)
     local mouse = self.Player:GetMouse()
 
-    BodyVelocity.Velocity = mouse.Hit.LookVector * CurrentSpeed
+    if mouseActive then
+        BodyVelocity.Velocity = mouse.Hit.LookVector * CurrentSpeed
+    end
 
     if RotX ~= 0 then
         BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, RotX, RotX / 3)
@@ -161,7 +169,7 @@ end
 
 -- Determine rotation of the ship based on the user's mouse detla and turn speed
 function FlightController:GetRotationFromMouse()
-    if UserInputService:IsMouseButtonPressed(1) then
+    if UserInputService:IsMouseButtonPressed(1) and not UserInputService:IsKeyDown(KEYBINDS.FREE_LOOK) then
 		local mouseDelta = UserInputService:GetMouseDelta()
 		mouseDelta = Vector2.new(math.clamp(mouseDelta.X, -7, 7), math.clamp(mouseDelta.Y, -7, 7))
 		
@@ -181,13 +189,33 @@ function FlightController:GetRotationFromMouse()
 end
 
 function FlightController:UpdateCamera(dt)
-	local camera = workspace.CurrentCamera
-	
+
     local alpha = math.clamp(0.5 * 20 * dt, 0, 1)
-	local goal = PrimaryPart.CFrame * CAMERA_OFFSET
-    camera.CFrame = camera.CFrame:Lerp(goal, alpha)
+    local goal = PrimaryPart.CFrame * CAMERA_OFFSET
+
+    if not UserInputService:IsKeyDown(KEYBINDS.FREE_LOOK) then
+        mouseActive = true
+        --local lerped = Camera.CFrame:Lerp(goal, alpha)
+        --Camera.CFrame = CFrame.new(Vector3.new(lerped.Position.X, lerped.Position.Y, PrimaryPart.Position.Z)) * CFrame.Angles(lerped:ToEulerAnglesXYZ())
+        Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
+        xAngle = 0
+        yAngle = 0
+    else
+        mouseActive = false
+        self:FreeLook(alpha)
+    end
 end
 
+function FlightController:FreeLook(alpha)
+    local mouseDelta = UserInputService:GetMouseDelta()
+    xAngle = xAngle - mouseDelta.X * 0.4
+    --Clamp the vertical axis so it doesn't go upside down or glitch.
+    yAngle = math.clamp(yAngle - mouseDelta.Y * 0.4, -80, 80)
 
+    local goal = PrimaryPart.CFrame * CFrame.Angles(0, math.rad(xAngle), 0) * CFrame.Angles(math.rad(yAngle), 0, 0)
+    goal = goal * CAMERA_OFFSET
+
+    Camera.CFrame = Camera.CFrame:Lerp(goal, alpha) 
+end
 
 return FlightController
