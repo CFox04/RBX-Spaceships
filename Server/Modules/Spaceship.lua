@@ -58,6 +58,7 @@ function Spaceship.new(modelName, Owner)
     self.pilotSeated:Connect(function()
         if seat.Occupant then
             lastPilot = game.Players[seat.Occupant.Parent.Name]
+            self:CreateThrustParts(lastPilot)
             -- Notify the FlightController to begin controlling the ship
             SpaceshipService:GainControls(lastPilot, self)
         end
@@ -94,14 +95,14 @@ function Spaceship:Init()
 end
 
 function Spaceship:Spawn(cframe)
-    self:CreateThrustParts()
     WeldUtil.WeldModel(self.Model)
+    self.Model.Name = string.format("%s-%s", self.Model.Name, self.Owner.Name)
     self.Model.Parent = workspace
     self.Model:SetPrimaryPartCFrame(cframe)
 end
 
 -- Creates the required meshparts for the thrust effect
-function Spaceship:CreateThrustParts()
+function Spaceship:CreateThrustParts(player)
     -- Find thrust root parts
     for _, part in pairs(self.Model:GetDescendants()) do
         if part:IsA("BasePart") and part.Name == "ThrustRootPart" then
@@ -109,10 +110,24 @@ function Spaceship:CreateThrustParts()
             model.Name = "Thruster"
             part.Parent = model
             model.PrimaryPart = part
+            -- model.PrimaryPart:SetNetworkOwner(player)
+            local diameter = part.Diameter.Value
+            local color = part.ThrustColor.Value
             -- Create corresponding parts
             for i = 1, 4 do
-                local newPart = script:FindFirstChild("Cone"):Clone()
-                newPart.Parent = model
+                local cone = script:FindFirstChild("Cone"):Clone()
+                local weld = Instance.new("Weld", cone)
+                weld.Part0 = part
+                weld.Part1 = cone
+                
+                -- Thrust cones closer to the center are smaller and vice versa
+                local Diameter = diameter - (0.5 * (4 - i))
+                cone.Size = Vector3.new(Diameter, cone.Size.Y, Diameter)
+
+                cone.Color = color
+                cone.Transparency = 1
+                cone.Name = string.format("%s%i", cone.Name, i)
+                cone.Parent = model
             end
         end
     end

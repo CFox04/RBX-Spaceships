@@ -189,14 +189,11 @@ function FlightController:GetRotationFromMouse()
 end
 
 function FlightController:UpdateCamera(dt)
-
     local alpha = math.clamp(0.5 * 20 * dt, 0, 1)
     local goal = PrimaryPart.CFrame * CAMERA_OFFSET
 
     if not UserInputService:IsKeyDown(KEYBINDS.FREE_LOOK) then
         mouseActive = true
-        --local lerped = Camera.CFrame:Lerp(goal, alpha)
-        --Camera.CFrame = CFrame.new(Vector3.new(lerped.Position.X, lerped.Position.Y, PrimaryPart.Position.Z)) * CFrame.Angles(lerped:ToEulerAnglesXYZ())
         Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
         xAngle = 0
         yAngle = 0

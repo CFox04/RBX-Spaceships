@@ -15,17 +15,35 @@ local Thruster = {}
 Thruster.__index = Thruster
 
 local PART_OFFSET = 0.2
-local RunService 
+local SpaceshipService
+local RunService
 
--- Gets a darker color shade of specified color
-local function GetDarkColorShade(color)
-	local R = (color.R * 255) / 1.5
-	local G = (color.G * 255) / 2
-	local B = color.B * 255 
-	local darkColor = Color3.fromRGB(R, G, B)
-	
-	return darkColor
+local function offsetWeld(weld, offset)
+	return weld.Part0.CFrame:Inverse() * (weld.Part0.CFrame * CFrame.new(0, 0, offset)) * CFrame.Angles(math.rad(90), 0, 0)
 end
+
+-- local function resizeWeldedPart(part, newSize, minOffset)
+-- 	local weld = part:FindFirstChildWhichIsA("Weld")
+-- 	local sizeDeltas = Vector3.new(newSize.X - part.Size.X, newSize.Y - part.Size.Y, newSize.Z - part.Size.Z)
+-- 	print(sizeDeltas)
+-- 	local offsetX, offsetY, offsetZ = minOffset
+-- 	if sizeDeltas.X ~= 0 then
+-- 		offsetX = part.Size.X / 2
+-- 		offsetX = offsetX > minOffset.X and offsetX or minOffset.X
+-- 	end
+-- 	if sizeDeltas.Y ~= 0 then
+-- 		offsetY = part.Size.Y / 2
+-- 		offsetY = offsetY > minOffset.Y and offsetY or minOffset.Y
+-- 	end
+-- 	if sizeDeltas.Z ~= 0 then
+-- 		offsetZ = part.Size.Z / 2
+-- 		offsetX = offsetX > minOffset.X and offsetX or minOffset.X
+-- 	end
+-- 	-- local offset = Vector3.new(part.Size.X / 2, part.Size.Y / 2, part.Size.Z / 2)
+-- 	part.Size = newSize
+-- 	print(offsetX, offsetY, offsetZ)
+-- 	weld.C0 = weld.Part0.CFrame:Inverse() * (weld.Part0.CFrame * CFrame.new(0, 0, offsetY) * CFrame.Angles(math.rad(90), 0, 0))
+-- end
 
 -- Thrusts an array of thrusters 
 function Thruster.ThrustAll(thrustGroup, speed)
@@ -82,6 +100,7 @@ end
 
 -- AeroGameFramework initialization
 function Thruster:Init()
+	SpaceshipService = self.Services.SpaceshipService
 	RunService = game:GetService("RunService")
 end
 
@@ -91,9 +110,10 @@ function Thruster:InitializeParts()
 		-- Count index only on cone parts
 		local i = 1
 		for _, part in pairs(self.RootPart.Parent:GetChildren()) do
-			if part:IsA("MeshPart") and part.Name == "Cone" then
+			if part:IsA("MeshPart") and string.find(part.Name, "Cone") then
 				self.Parts[#self.Parts+1] = part
-				self:InitPart(i, part)
+				self:UpdatePart(part, i)
+				--self:InitPart(i, part)
 	
 				i += 1
 			end
@@ -109,18 +129,59 @@ function Thruster:InitPart(index, part)
 	weld = Instance.new("Weld", part)
 	weld.Part0 = self.RootPart
 	weld.Part1 = part
-	weld.C0 = weld.Part0.CFrame:Inverse() * (self.RootPart.CFrame * CFrame.Angles(math.rad(90), 0, 0))
 	
 	-- Thrust cones closer to the center are smaller and vice versa
 	local Diameter = self.Diameter - (0.5 * (4 - index))
-	local height = 1 - (0.1 * (4 - index))
-	part.Size = Vector3.new(Diameter, height, Diameter)
+	part.Size = Vector3.new(Diameter, part.Size.Y, Diameter)
 
 	part.Color = self.Color
-	weld.C0 = weld.C0 + Vector3.new(0, 0, height / 2)
 	part.Transparency = 1
+	part.Name = string.format("%s%i", part.Name, index)
+
+	self:UpdatePart(part, index)
 	
 	return part
+end
+
+-- Updates part depending on speed 
+function Thruster:UpdatePart(part, index)
+	-- How fast the ship is moving relative to its maximum speed
+	local speedRatio = self.CurrentSpeed / self.MaxSpeed
+	-- Each part's height will be PART_OFFSET smaller than the next and less than self.MaxHeight
+	local height = (speedRatio * self.MaxHeight) - (PART_OFFSET * (#self.Parts - index))
+	-- Minimum height of 0.5 studs
+	height = height > 0.5 and height or 0.5
+	--resizeWeldedPart(part, Vector3.new(part.Size.X, height, part.Size.Z), Vector3.new(0.1, 0.1, 0.1))
+	part.Size = Vector3.new(part.Size.X, height, part.Size.Z)
+
+	-- Makes the inner-most cone glow and increase Diameter as speed increases
+	if index == 1 then
+		local Diameter = math.clamp(speedRatio, 0.5, 0.65) * self.Diameter
+		part.Size = Vector3.new(Diameter, part.Size.Y, Diameter)
+	end
+
+	-- As the thrust effect increases in height, it will need to move back a bit
+	local zOffset = part.Size.Y / 2
+	zOffset = zOffset < 0.05 and 0.05 or zOffset
+	
+	local weld = part:FindFirstChildWhichIsA("Weld")
+	--Offset weld 
+	weld.C0 = offsetWeld(weld, zOffset)
+end
+
+function Thruster:Flicker(offset)
+	local part = self.Parts[3]
+	coroutine.wrap(function()
+		local weld = part:FindFirstChildWhichIsA("Weld")
+		local zOffset = (part.Size.Y / 2) + (offset / 2)
+		zOffset = zOffset < 0.05 and 0.05 or zOffset
+		part.Size = part.Size + Vector3.new(0, offset, 0)
+		-- Offset weld 
+		--weld.C0 = offsetWeld(weld, zOffset)
+		wait(0.1)
+		part.Size = part.Size - Vector3.new(0, offset, 0)
+		weld.C0 = offsetWeld(weld, zOffset)
+	end)()
 end
 
 function Thruster:FadeIn(time)
@@ -154,31 +215,6 @@ function Thruster:FadeOut(time)
 	end)()
 end
 
--- Updates part depending on speed 
-function Thruster:UpdatePart(part, index)
-	-- How fast the ship is moving relative to its maximum speed
-	local speedRatio = self.CurrentSpeed / self.MaxSpeed
-	-- Each part's height will be PART_OFFSET smaller than the next and less than self.MaxHeight
-	local height = (speedRatio * self.MaxHeight) - (PART_OFFSET * (#self.Parts - index))
-	-- Minimum height of 0.5 studs
-	height = height > 0.5 and height or 0.5
-	part.Size = Vector3.new(part.Size.X, height, part.Size.Z)
-
-	-- Makes the inner-most cone glow and increase Diameter as speed increases
-	if index == 1 then
-		local Diameter = math.clamp(speedRatio, 0.5, 0.65) * self.Diameter
-		part.Size = Vector3.new(Diameter, part.Size.Y, Diameter)
-	end
-
-	-- As the thrust effect increases in height, it will need to move back a bit
-	local zOffset = part.Size.Y / 2
-	zOffset = zOffset < 0.05 and 0.05 or zOffset
-	
-	local weld = part:FindFirstChildWhichIsA("Weld")
-	-- Offset weld 
-	weld.C0 = weld.Part0.CFrame:Inverse() * (self.RootPart.CFrame * CFrame.new(0, 0, zOffset)) * CFrame.Angles(math.rad(90), 0, 0)
-end
-
 function Thruster:Thrust(speed)
 	if speed ~= self.CurrentSpeed then
 		self.CurrentSpeed = speed
@@ -188,6 +224,8 @@ function Thruster:Thrust(speed)
 			self:UpdatePart(part, i)
 		end
 	end
+
+	--self:Flicker(0.3)
 end
 
 function Thruster:Stop()
