@@ -5,7 +5,7 @@
 local Spaceship = {}
 Spaceship.__index = Spaceship
 
-local WeldUtil
+local MotorUtil
 local Signal
 local Maid
 local SpaceshipService
@@ -29,13 +29,13 @@ function Spaceship.new(modelName, Owner)
         -- Find ship model based on name
         Model = getShipModel(modelName),
         Owner = Owner,
-        Stats = {
+        Config = {
             Acceleration = 5,
             Speed = 5,
-            TurnSpeed = 5
+            TurnSpeed = 5,
+            ThrusterColor = Color3.new(143, 231, 255)
         },
-        Colors = {},
-        Thrusters = {}
+        Colors = {}
     }
 
     local seat = self.Model:FindFirstChildWhichIsA("Seat", true)
@@ -68,34 +68,34 @@ function Spaceship.new(modelName, Owner)
 
     -- Register the new spaceship with the SpaceshipService
     SpaceshipService:RegisterShip(self)
-    self:GetStatsFromConfig()
+    self:GetConfigFromConfig()
 
     return self
 end
 
--- Get stats from the configuration folder inside of model
-function Spaceship:GetStatsFromConfig()
+-- Get Config from the configuration folder inside of model
+function Spaceship:GetConfigFromConfig()
     local config = self.Model:FindFirstChildWhichIsA("Configuration", true)
     if config then
         for _, item in pairs(config:GetChildren()) do
-            if self.Stats[item.Name] then
-                self.Stats[item.Name] = item.Value
+            if self.Config[item.Name] then
+                self.Config[item.Name] = item.Value
             end
         end
     else
-        warn("Could not locate ship's configuration. Using default stats.")
+        warn("Could not locate ship's configuration. Using default Config.")
     end
 end
 
 function Spaceship:Init()
-    WeldUtil = self.Shared.WeldUtil
+    MotorUtil = self.Shared.MotorUtil
     Signal = self.Shared.Signal
     Maid = self.Shared.Maid
     SpaceshipService = self.Services.SpaceshipService
 end
 
 function Spaceship:Spawn(cframe)
-    WeldUtil.WeldModel(self.Model)
+    MotorUtil.MotorModel(self.Model)
     self.Model.Name = string.format("%s-%s", self.Model.Name, self.Owner.Name)
     self.Model.Parent = workspace
     self.Model:SetPrimaryPartCFrame(cframe)
@@ -110,21 +110,29 @@ function Spaceship:CreateThrustParts(player)
             model.Name = "Thruster"
             part.Parent = model
             model.PrimaryPart = part
-            -- model.PrimaryPart:SetNetworkOwner(player)
+            local particles = script:FindFirstChild("Particles"):Clone()
+            local motor = Instance.new("Motor6D", particles)
+            motor.Part0 = part
+            motor.Part1 = particles
+            motor.C0 = motor.Part0.CFrame:Inverse() * (motor.Part0.CFrame)
             local diameter = part.Diameter.Value
-            local color = part.ThrustColor.Value
+            particles.ParticleEmitter.Color = ColorSequence.new(self.Config.ThrusterColor)
+            particles.ParticleEmitter.Size = NumberSequence.new{NumberSequenceKeypoint.new(0, diameter / 2.5), NumberSequenceKeypoint.new(1, diameter / 4)}
+            particles.Position = part.Position
+            particles.Parent = model
             -- Create corresponding parts
             for i = 1, 4 do
                 local cone = script:FindFirstChild("Cone"):Clone()
-                local weld = Instance.new("Weld", cone)
-                weld.Part0 = part
-                weld.Part1 = cone
+                local motor = Instance.new("Motor6D", cone)
+                motor.Part0 = part
+                motor.Part1 = cone
+                motor.C0 = motor.Part0.CFrame:Inverse() * (motor.Part0.CFrame * CFrame.Angles(math.rad(90), 0, 0))
                 
                 -- Thrust cones closer to the center are smaller and vice versa
                 local Diameter = diameter - (0.5 * (4 - i))
                 cone.Size = Vector3.new(Diameter, cone.Size.Y, Diameter)
 
-                cone.Color = color
+                cone.Color = self.Config.ThrusterColor
                 cone.Transparency = 1
                 cone.Name = string.format("%s%i", cone.Name, i)
                 cone.Parent = model

@@ -13,7 +13,7 @@ function TestService:Start()
     players.PlayerAdded:Connect(
         function(player)
             -- Wait for character
-            local character = player.Character or player.CharacterAdded:wait()
+            local character = player.Character or player.CharacterAdded:Wait()
             -- Spawn a new spaceship at the player's location
             local newSpaceship = Spaceship.new("Test", player)
             newSpaceship:Spawn(character.HumanoidRootPart.CFrame)

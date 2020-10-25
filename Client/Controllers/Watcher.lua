@@ -1,12 +1,13 @@
--- Animation Controller
--- Username
+-- Watcher
+-- ItzFoxz
 -- October 15, 2020
 
 
 
-local Watcher = {}
+local Watcher = {EventConnections = {}}
 
-local SpaceshipService 
+local STOP_WATCHING_EVENT = "stopWatching"
+local SpaceshipService
 
 function Watcher:Start()
     SpaceshipService.watchSpaceship:Connect(function(spaceship)
@@ -16,25 +17,37 @@ function Watcher:Start()
     SpaceshipService.onSpaceshipChange:Connect(function(part, property, value)
         self:HandleChange(part, property, value)
     end)
+
+    self:ConnectEvent(STOP_WATCHING_EVENT, function()
+        self:StopWatching()
+    end)
 end
 
 
 function Watcher:Init()
-	SpaceshipService = self.Services.SpaceshipService
+    SpaceshipService = self.Services.SpaceshipService
+    Watcher:RegisterEvent(STOP_WATCHING_EVENT)
 end
 
+-- Watch an instance for changes and notify other clients of that change
 function Watcher:Watch(instance)
-    print("Watching instance: ", instance.Name)
-    -- Find thrust root parts
     for _, part in pairs(instance:GetDescendants()) do
         if part:IsA("BasePart") or part:IsA("Weld") then
-            part.Changed:Connect(function(property)
+            local connection = part.Changed:Connect(function(property)
                 SpaceshipService:RegisterChange(part, property, part[property])
             end)
+            self.EventConnections[#self.EventConnections+1] = connection
         end
     end
 end
 
+function Watcher:StopWatching()
+    for _, connection in pairs(self.EventConnections) do
+        connection:Disconnect()
+    end
+end
+
+-- Update parts based on the change
 function Watcher:HandleChange(part, property, value)
     if property == "size" then
         property = "Size"

@@ -12,18 +12,19 @@ local KEYBINDS = {
     FREE_LOOK = Enum.KeyCode.LeftAlt
 }
 
-local CAMERA_OFFSET = CFrame.new(0, 13, 25) * CFrame.fromEulerAnglesXYZ(math.rad(-10), 0, 0)
+local CAMERA_OFFSET = CFrame.new(0, 13, 30) * CFrame.fromEulerAnglesXYZ(math.rad(-10), 0, 0)
 
 local SpaceshipService
 local UserInputService
 local RunService
 local Thruster
+local Watcher
 
 local Spaceship
 local PrimaryPart
 local BodyVelocity
 local BodyGyro
-local ShipStats
+local ShipConfig
 local Camera = workspace.CurrentCamera
 
 local CurrentSpeed = 0 
@@ -43,7 +44,7 @@ function FlightController:Start()
     SpaceshipService.gainControls:Connect(function(spaceship)
         Spaceship = spaceship
         PrimaryPart = Spaceship.Model.PrimaryPart
-        ShipStats = spaceship.Stats
+        ShipConfig = spaceship.Config
         BodyVelocity = nil
         BodyGyro = nil
 
@@ -57,12 +58,16 @@ end
 function FlightController:Init()
     SpaceshipService = self.Services.SpaceshipService
     Thruster = self.Modules.Thruster
+    Watcher = self.Controllers.Watcher
     UserInputService = game:GetService("UserInputService")
     RunService = game:GetService("RunService")
 end
 
 function FlightController:StartFlight()
     if Spaceship then
+        -- Create a thruster group
+        ThrusterGroup = Thruster.CreateThrusterGroup(Spaceship.Model, ShipConfig.Speed) 
+        
         -- Set up the BodyGyro and BodyVelocity objects
         local seat = Spaceship.Model:FindFirstChildWhichIsA("Seat", true)
 
@@ -70,12 +75,11 @@ function FlightController:StartFlight()
         SeatEvent = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
             if not seat.Occupant then
                 self:EndFlight()
+                Thruster.StopAll(ThrusterGroup)
+                Watcher:FireEvent("stopWatching")
                 SeatEvent:Disconnect()
             end
         end)
-
-        -- Create a thruster group
-        ThrusterGroup = Thruster.CreateThrusterGroup(Spaceship.Model, ShipStats.Speed) 
 
         if not seat:FindFirstChild("BodyGyro") then
             BodyGyro = Instance.new("BodyGyro", seat)
@@ -142,8 +146,8 @@ end
 
 -- Called each frame to handle user input
 function FlightController:HandleInput()
-    local MaxSpeed = ShipStats.Speed * 30
-    local Acceleration = ShipStats.Acceleration / 3
+    local MaxSpeed = ShipConfig.Speed * 30
+    local Acceleration = ShipConfig.Acceleration / 3
 
 	-- Acceleration
 	if UserInputService:IsKeyDown(KEYBINDS.ACCELERATE) then
@@ -174,7 +178,7 @@ function FlightController:GetRotationFromMouse()
 		mouseDelta = Vector2.new(math.clamp(mouseDelta.X, -7, 7), math.clamp(mouseDelta.Y, -7, 7))
 		
 		-- Turn speed will speed up as the ship speeds up and vice versa:
-        local turnSpeed = -math.clamp(ShipStats.TurnSpeed * (CurrentSpeed / 10) / 10000, 0.00005, ShipStats.TurnSpeed / 10000)
+        local turnSpeed = -math.clamp(ShipConfig.TurnSpeed * (CurrentSpeed / 10) / 10000, 0.00005, ShipConfig.TurnSpeed / 10000)
 		
 		-- Drag based on mouse delta
 		local dragX = math.abs(mouseDelta.X / 10)
@@ -189,7 +193,7 @@ function FlightController:GetRotationFromMouse()
 end
 
 function FlightController:UpdateCamera(dt)
-    local alpha = math.clamp(0.5 * 20 * dt, 0, 1)
+    local alpha = math.clamp(10 * dt, 0, 1)
     local goal = PrimaryPart.CFrame * CAMERA_OFFSET
 
     if not UserInputService:IsKeyDown(KEYBINDS.FREE_LOOK) then
@@ -199,20 +203,21 @@ function FlightController:UpdateCamera(dt)
         yAngle = 0
     else
         mouseActive = false
-        self:FreeLook(alpha)
+        self:FreeLook(dt)
     end
 end
 
-function FlightController:FreeLook(alpha)
+function FlightController:FreeLook(dt)
     local mouseDelta = UserInputService:GetMouseDelta()
     xAngle = xAngle - mouseDelta.X * 0.4
     --Clamp the vertical axis so it doesn't go upside down or glitch.
     yAngle = math.clamp(yAngle - mouseDelta.Y * 0.4, -80, 80)
 
-    local goal = PrimaryPart.CFrame * CFrame.Angles(0, math.rad(xAngle), 0) * CFrame.Angles(math.rad(yAngle), 0, 0)
+    local goal = PrimaryPart.CFrame * (CFrame.Angles(0, math.rad(xAngle), 0) * CFrame.Angles(math.rad(yAngle), 0, 0))
     goal = goal * CAMERA_OFFSET
 
-    Camera.CFrame = Camera.CFrame:Lerp(goal, alpha) 
+    local alpha = math.clamp(CAMERA_OFFSET.Position.Z * dt, 0, 1)
+    Camera.CFrame = Camera.CFrame:Lerp(goal, alpha)
 end
 
 return FlightController
