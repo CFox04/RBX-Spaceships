@@ -138,8 +138,8 @@ function Maid:DoCleaning()
 			task()
 		elseif (typeof(task) == "RBXScriptConnection") then
 			task:Disconnect()
-		elseif (task.Destroy) then
-			task:Destroy()
+		else
+			task = nil
 		end
 		index, task = next(tasks)
 	end

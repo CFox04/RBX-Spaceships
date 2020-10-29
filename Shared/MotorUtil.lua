@@ -28,4 +28,14 @@ function MotorUtil.MotorModel(model)
     end
 end
 
+-- Attach two parts with motor
+function MotorUtil.MotorTo(partA, partB)
+    local motor = Instance.new("Motor6D", partA)
+    motor.Part0 = partB
+    motor.Part1 = partA
+    motor.C0 = motor.Part0.CFrame:Inverse() * (motor.Part0.CFrame)
+
+    return motor
+end
+
 return MotorUtil

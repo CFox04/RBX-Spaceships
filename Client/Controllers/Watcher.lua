@@ -2,58 +2,44 @@
 -- ItzFoxz
 -- October 15, 2020
 
-
-
 local Watcher = {EventConnections = {}}
 
-local STOP_WATCHING_EVENT = "stopWatching"
-local SpaceshipService
+local WatcherService
 
 function Watcher:Start()
-    SpaceshipService.watchSpaceship:Connect(function(spaceship)
-        self:Watch(spaceship)
-    end)
-
-    SpaceshipService.onSpaceshipChange:Connect(function(part, property, value)
-        self:HandleChange(part, property, value)
-    end)
-
-    self:ConnectEvent(STOP_WATCHING_EVENT, function()
-        self:StopWatching()
-    end)
+    WatcherService.clientUpdate:Connect(Watcher.Update)
+    WatcherService.startWatching:Connect(Watcher.Watch)
 end
 
 
 function Watcher:Init()
-    SpaceshipService = self.Services.SpaceshipService
-    Watcher:RegisterEvent(STOP_WATCHING_EVENT)
+    WatcherService = self.Services.WatcherService
 end
 
--- Watch an instance for changes and notify other clients of that change
-function Watcher:Watch(instance)
-    for _, part in pairs(instance:GetDescendants()) do
-        if part:IsA("BasePart") or part:IsA("Weld") then
-            local connection = part.Changed:Connect(function(property)
-                SpaceshipService:RegisterChange(part, property, part[property])
-            end)
-            self.EventConnections[#self.EventConnections+1] = connection
-        end
-    end
-end
-
-function Watcher:StopWatching()
-    for _, connection in pairs(self.EventConnections) do
-        connection:Disconnect()
+-- Watch a part for specific property changes
+function Watcher.Watch(part)
+    if WatcherService:IsObjectWhitelisted(part) then
+        print("Watching part", part)
+        local connection = part.Changed:Connect(function(property)
+            WatcherService:ObjectUpdate(part, {[property] = part[property]})
+        end)
+        Watcher.EventConnections[#Watcher.EventConnections+1] = connection
+    else
+        warn("No permission to watch that object. Don't cheat, bud.")
     end
 end
 
 -- Update parts based on the change
-function Watcher:HandleChange(part, property, value)
-    if property == "size" then
-        property = "Size"
+function Watcher.Update(part, properties)
+    for property, value in pairs(properties) do
+        print("Updating part")
+        print(part, property)
+        if property == "size" then
+            property = "Size"
+        end
+    
+        part[property] = value
     end
-
-    part[property] = value
 end
 
 

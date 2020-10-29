@@ -13,28 +13,35 @@ local KEYBINDS = {
 }
 
 local CAMERA_OFFSET = CFrame.new(0, 13, 30) * CFrame.fromEulerAnglesXYZ(math.rad(-10), 0, 0)
+local SPEED_SCALE = 30
+local MAX_BANK_SPEED = 1.5
 
+local SpaceshipSoundController
 local SpaceshipService
 local UserInputService
+local TweenService
 local RunService
 local Thruster
-local Watcher
 
 local Spaceship
 local PrimaryPart
 local BodyVelocity
 local BodyGyro
 local ShipConfig
+local HumSound
+local ThrustSound
 local Camera = workspace.CurrentCamera
 
-local CurrentSpeed = 0 
+local CurrentSpeed = 0
 local IsFlying = false
 local mouseActive = false
 local RotX = 0
 local RotY = 0
 local ThrusterGroup = {}
+local ThrusterCreated = false
 local SteppedEvent
 local SeatEvent
+local lastCFrame
 
 local xAngle = 0
 local yAngle = 0
@@ -58,32 +65,40 @@ end
 function FlightController:Init()
     SpaceshipService = self.Services.SpaceshipService
     Thruster = self.Modules.Thruster
-    Watcher = self.Controllers.Watcher
+    SpaceshipSoundController = self.Controllers.SpaceshipSoundController
     UserInputService = game:GetService("UserInputService")
     RunService = game:GetService("RunService")
+    TweenService = game:GetService("TweenService")
 end
 
 function FlightController:StartFlight()
     if Spaceship then
-        -- Create a thruster group
-        ThrusterGroup = Thruster.CreateThrusterGroup(Spaceship.Model, ShipConfig.Speed) 
+        if not ThrusterCreated then
+            -- Create a thruster group
+            ThrusterGroup = Thruster.CreateThrusterGroup(Spaceship.Model, ShipConfig.Speed, Spaceship.ID)
+            ThrusterCreated = true
+        end
+
+        Thruster.ActivateAll(ThrusterGroup)
         
         -- Set up the BodyGyro and BodyVelocity objects
         local seat = Spaceship.Model:FindFirstChildWhichIsA("Seat", true)
+
+        HumSound = seat:FindFirstChild("hum")
+        ThrustSound = seat:FindFirstChild("thrust")
+
+        -- Play sound
+        SpaceshipSoundController:StartSound(HumSound, ThrustSound, 5)
 
         -- Stop flight if player exits seat
         SeatEvent = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
             if not seat.Occupant then
                 self:EndFlight()
-                Thruster.StopAll(ThrusterGroup)
-                Watcher:FireEvent("stopWatching")
-                SeatEvent:Disconnect()
             end
         end)
 
         if not seat:FindFirstChild("BodyGyro") then
             BodyGyro = Instance.new("BodyGyro", seat)
-            -- BodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
             BodyGyro.MaxTorque = Vector3.new(40000, 40000, 40000)
             BodyGyro.D = 300
             BodyGyro.P = 3000
@@ -94,7 +109,6 @@ function FlightController:StartFlight()
         if not seat:FindFirstChild("BodyVelocity") then
             BodyVelocity = Instance.new("BodyVelocity", seat)
             BodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            BodyVelocity.P = 1250
             BodyVelocity.Velocity = Vector3.new()
         else
             BodyVelocity = seat:FindFirstChild("BodyVelocity")
@@ -105,67 +119,100 @@ function FlightController:StartFlight()
         UserInputService.MouseIconEnabled = false
         UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 
+        -- Relock mouse when window is focused
+        UserInputService.WindowFocused:Connect(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        end)
+
         -- Fly function will be called on every frame
         SteppedEvent = RunService.Stepped:Connect(function(_, dt)
+            self:ValidateCFrame()
             self:Fly(dt)
-            Thruster.ThrustAll(ThrusterGroup, CurrentSpeed / 30)
+            SpaceshipSoundController:UpdateSound(CurrentSpeed / ShipConfig.Speed)
+            Thruster.ThrustAll(ThrusterGroup, CurrentSpeed)
         end)
 
         IsFlying = true
     end
 end
 
--- Undos everything done in StartFlight()
 function FlightController:EndFlight()
-    -- Disconnect the Stepped event 
+    -- Disconnect events
+    SeatEvent:Disconnect()
     SteppedEvent:Disconnect()
+    -- Stop thrusters
+    Thruster.DeactivateAll(ThrusterGroup)
+    -- Restore camera
     workspace.CurrentCamera.CameraType = Enum.CameraType.Follow
     UserInputService.MouseIconEnabled = true
     UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+
+    SpaceshipSoundController:StopSound(3)
+
     IsFlying = false
+
+    self:FadeVelocity()
 end
 
 function FlightController:Fly(dt)
     local mouse = self.Player:GetMouse()
+    local newVelocity = mouse.Hit.LookVector * (CurrentSpeed * SPEED_SCALE)
 
-    if mouseActive then
-        BodyVelocity.Velocity = mouse.Hit.LookVector * CurrentSpeed
-    end
-
-    if RotX ~= 0 then
-        BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, RotX, RotX / 3)
-    end
-    
-    if RotY ~= 0 then
-        BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(RotY, 0, 0) 
+    -- Only update velocity when it has changed
+    if BodyVelocity.Velocity ~= newVelocity and mouseActive then
+        BodyVelocity.Velocity = newVelocity
     end
 
     self:UpdateCamera(dt)
     self:HandleInput()
 end
 
+-- Anti exploit: Ensures the ship's velocity does not change more than it should (DOESNT WORK)
+function FlightController:ValidateCFrame()
+    if lastCFrame then
+        --print((PrimaryPart.Position - lastCFrame.Position).Magnitude)
+    end
+    -- if math.floor(PrimaryPart.Velocity.Magnitude) > math.floor(BodyVelocity.Velocity.Magnitude) * 1.5 then
+    --     print(math.floor(PrimaryPart.Velocity.Magnitude), math.floor(BodyVelocity.Velocity.Magnitude) * 1.5)
+    --     print("cheating")
+    --     Spaceship.Model:SetPrimaryPartCFrame(lastCFrame)
+    -- end
+    lastCFrame = PrimaryPart.CFrame
+end
+
+-- Slowly stop the ship
+function FlightController:FadeVelocity()
+    local speedRatio = CurrentSpeed / ShipConfig.Speed
+    local time = speedRatio * 5
+    local Tween = TweenService:Create(BodyVelocity, TweenInfo.new(time), {
+        Velocity = Vector3.new(0, 0, 0)
+    })
+    Tween:Play()
+end
+
 -- Called each frame to handle user input
 function FlightController:HandleInput()
-    local MaxSpeed = ShipConfig.Speed * 30
-    local Acceleration = ShipConfig.Acceleration / 3
+    local speedRatio = CurrentSpeed / ShipConfig.Speed
+    local maxSpeed = ShipConfig.Speed 
+    local acceleration = ShipConfig.Acceleration / 100
 
 	-- Acceleration
 	if UserInputService:IsKeyDown(KEYBINDS.ACCELERATE) then
-		CurrentSpeed = math.clamp(CurrentSpeed + Acceleration, 0, MaxSpeed)
+		CurrentSpeed = math.clamp(CurrentSpeed + acceleration, 0, maxSpeed)
     end
     -- Deceleration
 	if UserInputService:IsKeyDown(KEYBINDS.DECELERATE) then
-		CurrentSpeed = math.clamp(CurrentSpeed - Acceleration, 0, MaxSpeed)
+		CurrentSpeed = math.clamp(CurrentSpeed - acceleration, 0, maxSpeed)
 	end
 
 	-- Banking with A and D
-	local bankSpeed = math.clamp(CurrentSpeed / 4000, 0.01, 0.04)
+	local bankSpeed = (speedRatio * MAX_BANK_SPEED) + 0.5
 	
 	if UserInputService:IsKeyDown(KEYBINDS.ROLL_LEFT) then
-		BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, 0, bankSpeed)
+		BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, 0, math.rad(bankSpeed))
 	end 
 	if  UserInputService:IsKeyDown(KEYBINDS.ROLL_RIGHT) then
-		BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, 0, -bankSpeed)
+		BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, 0, math.rad(-bankSpeed))
     end
     
     self:GetRotationFromMouse()
@@ -185,7 +232,10 @@ function FlightController:GetRotationFromMouse()
 		local dragY = math.abs(mouseDelta.Y / 10)
 		
 		RotX = math.clamp(RotX + (mouseDelta.X * turnSpeed * dragX), -0.03, 0.03)
-		RotY = math.clamp(RotY + (mouseDelta.Y * turnSpeed * dragY), -0.03, 0.03)
+        RotY = math.clamp(RotY + (mouseDelta.Y * turnSpeed * dragY), -0.03, 0.03)
+        
+        BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(0, RotX, RotX / 3)
+        BodyGyro.CFrame = BodyGyro.CFrame * CFrame.fromEulerAnglesXYZ(RotY, 0, 0) 
 	else
 		RotX = 0
 		RotY = 0
